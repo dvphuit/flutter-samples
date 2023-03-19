@@ -1,43 +1,27 @@
 import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
-import 'package:ios_call_notification_sample/models/call_info.dart';
+import 'package:ios_call_notification_sample/managers/icaller.dart';
 import 'package:stringee_flutter_plugin/stringee_flutter_plugin.dart';
 
 import '../managers/android_call_manager.dart';
-import '../managers/instance_manager.dart' as InstanceManager;
 import '../managers/ios_call_manager.dart';
-import '../models/sync_call.dart';
 
-AndroidCallManager? _androidCallManager = AndroidCallManager.shared;
-IOSCallManager? _iOSCallManager = IOSCallManager.shared;
 bool isAndroid = Platform.isAndroid;
-bool _isMute = false;
-bool _isSpeakerOn = false;
-bool _isVideoEnable = false;
-bool _hasLocalStream = false;
-bool _hasRemoteStream = false;
-String _status = '';
 
 class CallScreen extends StatefulWidget {
   final String? toUserId;
   final String? fromUserId;
-  bool isVideo = false;
-  bool showIncomingUI = false;
-  bool dismissFuncCalled = false;
-  bool useCall2 = false;
+  final bool incoming;
+  final bool isVideo;
 
   CallScreen({
     Key? key,
     required this.fromUserId,
     required this.toUserId,
-    required this.isVideo,
-    bool? useCall2,
-  }) : super(key: key) {
-    if (useCall2 != null) {
-      this.useCall2 = useCall2;
-    }
-  }
+    required this.incoming,
+    this.isVideo = true,
+  }) : super(key: key);
 
   @override
   State<StatefulWidget> createState() {
@@ -45,33 +29,24 @@ class CallScreen extends StatefulWidget {
   }
 }
 
-class CallScreenState extends State<CallScreen> implements CallInfo {
+class CallScreenState extends State<CallScreen> {
+  bool showIncomingUI = false;
+  late ICaller iCaller;
+
   @override
   void initState() {
     super.initState();
-
     if (isAndroid) {
-      _androidCallManager!.getCallInfo(this);
-      _isSpeakerOn = widget.isVideo;
-      _isVideoEnable = widget.isVideo;
-      if (_androidCallManager!.showIncomingCall) {
-        widget.showIncomingUI = _androidCallManager!.showIncomingCall;
-      } else {
-        makeOutgoingCall();
-      }
+      iCaller = AndroidCallManager.instance;
     } else {
-      if (_iOSCallManager!.syncCall == null) {
-        // Goi di
-        makeOutgoingCall();
-      } else {
-        // Goi den
-        widget.showIncomingUI = !_iOSCallManager!.syncCall!.userAnswered;
-      }
+      iCaller = IOSCallManager.instance;
     }
+    showIncomingUI = widget.incoming;
   }
 
   @override
   Widget build(BuildContext context) {
+    print("[TEST] -> CallScreen showIncomingUI = $showIncomingUI");
     Widget nameCalling = new Container(
       alignment: Alignment.topCenter,
       padding: EdgeInsets.only(top: 120.0),
@@ -93,9 +68,7 @@ class CallScreenState extends State<CallScreen> implements CallInfo {
           new Container(
             alignment: Alignment.center,
             child: new Text(
-              isAndroid
-                  ? _status
-                  : '${_iOSCallManager!.syncCall != null ? _iOSCallManager!.syncCall!.status : ""}',
+              iCaller.status,
               style: new TextStyle(
                 color: Colors.white,
                 fontSize: 20.0,
@@ -112,7 +85,7 @@ class CallScreenState extends State<CallScreen> implements CallInfo {
       child: new Column(
           mainAxisAlignment: MainAxisAlignment.end,
           crossAxisAlignment: CrossAxisAlignment.center,
-          children: widget.showIncomingUI
+          children: showIncomingUI
               ? <Widget>[
                   new Row(
                     mainAxisAlignment: MainAxisAlignment.spaceAround,
@@ -159,13 +132,9 @@ class CallScreenState extends State<CallScreen> implements CallInfo {
                 ]),
     );
 
-    Widget localView = (isAndroid
-            ? _hasLocalStream
-            : _iOSCallManager!.syncCall!.hasLocalStream)
+    Widget localView = iCaller.hasLocalStream
         ? new StringeeVideoView(
-            isAndroid
-                ? _androidCallManager!.callId
-                : _iOSCallManager!.syncCall!.callId,
+            iCaller.callId,
             true,
             alignment: Alignment.topRight,
             margin: EdgeInsets.only(top: 100.0, right: 25.0),
@@ -175,13 +144,9 @@ class CallScreenState extends State<CallScreen> implements CallInfo {
           )
         : Placeholder();
 
-    Widget remoteView = (isAndroid
-            ? _hasRemoteStream
-            : _iOSCallManager!.syncCall!.hasRemoteStream)
+    Widget remoteView = iCaller.hasRemoteStream
         ? new StringeeVideoView(
-            isAndroid
-                ? _androidCallManager!.callId
-                : _iOSCallManager!.syncCall!.callId,
+            iCaller.callId,
             false,
             isMirror: false,
             scalingType: ScalingType.fill,
@@ -202,171 +167,64 @@ class CallScreenState extends State<CallScreen> implements CallInfo {
     );
   }
 
-  Future makeOutgoingCall() async {
-    final parameters = {
-      'from': widget.fromUserId,
-      'to': widget.toUserId,
-      'isVideoCall': widget.isVideo,
-      'customData': null,
-      'videoQuality': VideoQuality.hd,
-    };
-
-    if (isAndroid) {
-      if (widget.useCall2) {
-        _androidCallManager!.setStringeeCall2(
-            new StringeeCall2(InstanceManager.client), widget.isVideo);
-      } else {
-        _androidCallManager!.setStringeeCall(
-            new StringeeCall(InstanceManager.client), widget.isVideo);
-      }
-      _androidCallManager!.addListenerForCall();
-      _androidCallManager!.makeCall(parameters);
-    } else {
-      _iOSCallManager!.syncCall = SyncCall();
-      var outgoingCall;
-      if (widget.useCall2) {
-        outgoingCall = StringeeCall2(InstanceManager.client);
-        _iOSCallManager!.syncCall!.stringeeCall2 = outgoingCall;
-      } else {
-        outgoingCall = StringeeCall(InstanceManager.client);
-        _iOSCallManager!.syncCall!.stringeeCall = outgoingCall;
-      }
-      _iOSCallManager!.addListenerForCall();
-
-      outgoingCall.makeCall(parameters).then((result) {
-        bool status = result['status'];
-        int? code = result['code'];
-        String? message = result['message'];
-        print(
-            'MakeCall CallBack --- $status - $code - $message - ${outgoingCall.id} - ${outgoingCall.from} - ${outgoingCall.to}');
-
-        if (widget.useCall2) {
-          _iOSCallManager!.syncCall!.attachCall2(outgoingCall);
-        } else {
-          _iOSCallManager!.syncCall!.attachCall(outgoingCall);
-        }
-
-        if (!status) {
-          _iOSCallManager!.clearDataEndDismiss();
-        }
-      });
-    }
-  }
 
   void endCallTapped() {
-    if (isAndroid) {
-      _androidCallManager!.hangup();
-    } else {
-      if (_iOSCallManager!.syncCall == null) {
-        return;
-      }
-
-      _iOSCallManager!.syncCall!.hangup();
-    }
+    iCaller.hangup();
   }
 
   void acceptCallTapped() {
-    if (isAndroid) {
-      _androidCallManager!.answer().then((result) {
-        print('_acceptCallTapped -- ${result['message']}');
-        if (result['status']) {
-          setState(() {
-            widget.showIncomingUI = !widget.showIncomingUI;
-          });
-        } else {
-          _androidCallManager!.clearDataEndDismiss();
-        }
-      });
-    } else {
-      if (_iOSCallManager!.syncCall == null) {
-        return;
-      }
-
-      _iOSCallManager!.syncCall!.answerCallkitCall();
-    }
+    iCaller.answer();
   }
 
   void rejectCallTapped() {
-    if (isAndroid) {
-      _androidCallManager!.reject();
-    } else {
-      if (_iOSCallManager!.syncCall == null) {
-        return;
-      }
-      _iOSCallManager!.syncCall!.userRejected = true;
-      _iOSCallManager!.syncCall!.reject().then((status) {
-        if (Platform.isAndroid) {
-          _iOSCallManager!.clearDataEndDismiss();
-        }
-      });
-    }
+    iCaller.reject();
   }
 
   void changeToCallingUI() {
     setState(() {
-      widget.showIncomingUI = false;
+      showIncomingUI = false;
     });
   }
 
   void dismiss() {
-    _isMute = false;
-    _isSpeakerOn = false;
-    _isVideoEnable = false;
-    _hasLocalStream = false;
-    _hasRemoteStream = false;
-    _status = '';
-    if (isAndroid) {
-      Navigator.pop(context);
-    } else {
-      if (widget.dismissFuncCalled) {
-        return;
-      }
-      widget.dismissFuncCalled = !widget.dismissFuncCalled;
-      Navigator.pop(context);
-    }
+    Navigator.pop(context);
   }
 
-  @override
   void onMuteState(bool isMute) {
     setState(() {
-      _isMute = isMute;
+
     });
   }
 
-  @override
   void onReceiveLocalStream() {
     setState(() {
-      _hasLocalStream = true;
+
     });
   }
 
-  @override
   void onReceiveRemoteStream() {
     setState(() {
-      _hasRemoteStream = true;
+
     });
   }
 
-  @override
   void onSpeakerState(bool isSpeakerOn) {
     if (mounted) {
       setState(() {
-        _isSpeakerOn = isSpeakerOn;
+
       });
     }
   }
 
-  @override
   void onStatusChange(String status) {
     setState(() {
-      _status = status;
+
     });
   }
 
-  @override
   void onVideoState(bool isVideoEnable) {
     setState(() {
-      _isVideoEnable = isVideoEnable;
+
     });
   }
 }
@@ -380,19 +238,17 @@ class ButtonSwitchCamera extends StatefulWidget {
 
 class _ButtonSwitchCameraState extends State<ButtonSwitchCamera> {
   void _toggleSwitchCamera() {
-    if (isAndroid) {
-      _androidCallManager!.switchCamera();
-    } else {
-      if (_iOSCallManager!.syncCall == null) {
-        return;
-      }
-
-      _iOSCallManager!.syncCall!.switchCamera();
-    }
+    iCaller.switchCamera();
   }
 
+  late ICaller iCaller;
   @override
   void initState() {
+    if (isAndroid) {
+      iCaller = IOSCallManager.instance;
+    } else {
+      iCaller = AndroidCallManager.instance;
+    }
     super.initState();
   }
 
@@ -427,19 +283,17 @@ class ButtonSpeaker extends StatefulWidget {
 
 class _ButtonSpeakerState extends State<ButtonSpeaker> {
   void _toggleSpeaker() {
-    if (isAndroid) {
-      _androidCallManager!.setSpeakerphoneOn();
-    } else {
-      if (_iOSCallManager!.syncCall == null) {
-        return;
-      }
-
-      _iOSCallManager!.syncCall!.setSpeakerphoneOn();
-    }
+    iCaller.toggleSpeaker();
   }
 
+  late ICaller iCaller;
   @override
   void initState() {
+    if (isAndroid) {
+      iCaller = IOSCallManager.instance;
+    } else {
+      iCaller = AndroidCallManager.instance;
+    }
     super.initState();
   }
 
@@ -449,7 +303,7 @@ class _ButtonSpeakerState extends State<ButtonSpeaker> {
     return new GestureDetector(
       onTap: _toggleSpeaker,
       child: Image.asset(
-        (isAndroid ? _isSpeakerOn : _iOSCallManager!.syncCall!.isSpeaker)
+        iCaller.speakerOn
             ? 'images/ic_speaker_on.png'
             : 'images/ic_speaker_off.png',
         height: 75.0,
@@ -470,19 +324,17 @@ class ButtonMicro extends StatefulWidget {
 
 class _ButtonMicroState extends State<ButtonMicro> {
   void _toggleMicro() {
-    if (isAndroid) {
-      _androidCallManager!.mute();
-    } else {
-      if (_iOSCallManager!.syncCall == null) {
-        return;
-      }
-
-      _iOSCallManager!.syncCall!.mute();
-    }
+    iCaller.toggleMute();
   }
 
+  late ICaller iCaller;
   @override
   void initState() {
+    if (isAndroid) {
+      iCaller = IOSCallManager.instance;
+    } else {
+      iCaller = AndroidCallManager.instance;
+    }
     super.initState();
   }
 
@@ -492,9 +344,7 @@ class _ButtonMicroState extends State<ButtonMicro> {
     return new GestureDetector(
       onTap: _toggleMicro,
       child: Image.asset(
-        (isAndroid ? _isMute : _iOSCallManager!.syncCall!.isMute)
-            ? 'images/ic_mute.png'
-            : 'images/ic_mic.png',
+        iCaller.isMute ? 'images/ic_mute.png' : 'images/ic_mic.png',
         height: 75.0,
         width: 75.0,
       ),
@@ -513,19 +363,17 @@ class ButtonVideo extends StatefulWidget {
 
 class _ButtonVideoState extends State<ButtonVideo> {
   void _toggleVideo() {
-    if (isAndroid) {
-      _androidCallManager!.enableVideo();
-    } else {
-      if (_iOSCallManager!.syncCall == null) {
-        return;
-      }
-
-      _iOSCallManager!.syncCall!.enableVideo();
-    }
+    iCaller.toggleVideo();
   }
 
+  late ICaller iCaller;
   @override
   void initState() {
+    if (isAndroid) {
+      iCaller = IOSCallManager.instance;
+    } else {
+      iCaller = AndroidCallManager.instance;
+    }
     super.initState();
   }
 
@@ -535,7 +383,7 @@ class _ButtonVideoState extends State<ButtonVideo> {
     return new GestureDetector(
       onTap: widget.isVideo ? _toggleVideo : null,
       child: Image.asset(
-        (isAndroid ? _isVideoEnable : _iOSCallManager!.syncCall!.videoEnabled)
+        iCaller.videoOn
             ? 'images/ic_video.png'
             : 'images/ic_video_off.png',
         height: 75.0,

@@ -4,11 +4,11 @@ import 'package:stringee_flutter_plugin/stringee_flutter_plugin.dart';
 import 'call_screen.dart';
 import 'package:flutter_voip_push_notification/flutter_voip_push_notification.dart';
 
-var user1 = 'YOUR_USER1_ACCESS_TOKEN';
+var user1 = 'eyJjdHkiOiJzdHJpbmdlZS1hcGk7dj0xIiwidHlwIjoiSldUIiwiYWxnIjoiSFMyNTYifQ.eyJqdGkiOiJTSy4wLndkd29xU2R2UUEwSmNreGZYbHdZeXJMMG5yRUZSTklQLTE2Nzg1NTgxODMiLCJpc3MiOiJTSy4wLndkd29xU2R2UUEwSmNreGZYbHdZeXJMMG5yRUZSTklQIiwiZXhwIjoxNjgxMTUwMTgzLCJ1c2VySWQiOiI0NTY3In0.DVhz5t8eh39Le6bVXz46k0UCeKwOvSkWy_d731sbUso';
 var user2 = 'YOUR_USER2_ACCESS_TOKEN';
 
 StringeeClient _client = StringeeClient();
-String toUserId = "";
+String toUserId = "1234";
 
 void main() {
   runApp(MyApp());
@@ -81,17 +81,17 @@ class _MyHomePageState extends State<MyHomePage> {
           StringeeCall call = map['body'];
           CallManager.shared.handleIncomingCallEvent(call, context);
           break;
-        case StringeeClientEvents.incomingCall2:
-          StringeeCall2 call = map['body'];
-          CallManager.shared.handleIncomingCall2Event(call, context);
-          break;
-        case StringeeClientEvents.didReceiveObjectChange:
-          StringeeObjectChange objectChange = map['body'];
-          print(objectChange.objectType.toString() +
-              '\t' +
-              objectChange.type.toString());
-          print(objectChange.objects.toString());
-          break;
+        // case StringeeClientEvents.incomingCall2:
+        //   StringeeCall2 call = map['body'];
+        //   CallManager.shared.handleIncomingCall2Event(call, context);
+        //   break;
+        // case StringeeClientEvents.:
+        //   StringeeObjectChange objectChange = map['body'];
+        //   print(objectChange.objectType.toString() +
+        //       '\t' +
+        //       objectChange.type.toString());
+        //   print(objectChange.objects.toString());
+        //   break;
         default:
           break;
       }
@@ -266,9 +266,7 @@ class _ActionFormState extends State<ActionForm> {
               new Container(
                 height: 40.0,
                 width: 150.0,
-                child: new RaisedButton(
-                  color: Colors.grey[300],
-                  textColor: Colors.black,
+                child: new ElevatedButton(
                   onPressed: () {
                     callTapped(false);
                   },
@@ -278,9 +276,7 @@ class _ActionFormState extends State<ActionForm> {
               new Container(
                 height: 40.0,
                 width: 150.0,
-                child: new RaisedButton(
-                  color: Colors.grey[300],
-                  textColor: Colors.black,
+                child: new ElevatedButton(
                   onPressed: () {
                     callTapped(true);
                   },

@@ -1,86 +1,12 @@
-import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
-
-import 'package:device_info_plus/device_info_plus.dart';
-import 'package:firebase_core/firebase_core.dart';
-import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:ios_call_notification_sample/managers/android_call_manager.dart';
-import 'package:ios_call_notification_sample/managers/ios_call_manager.dart';
-import 'package:permission_handler/permission_handler.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:stringee_flutter_plugin/stringee_flutter_plugin.dart';
 
-import 'managers/instance_manager.dart' as InstanceManager;
-import 'screens/call_screen.dart';
+import 'managers/instance_manager.dart' as Stringee;
 
-var user1 = 'PUT_YOUR_TOKEN_HERE';
-
-String toUserId = "";
-bool isAndroid = Platform.isAndroid;
-bool showIncomingCall = false;
-AndroidCallManager? _androidCallManager = AndroidCallManager.shared;
-IOSCallManager? _iOSCallManager = IOSCallManager.shared;
-
-/// Nhận và hiện notification khi app ở dưới background hoặc đã bị kill ở android
-@pragma('vm:entry-point')
-Future<void> _backgroundMessageHandler(RemoteMessage remoteMessage) async {
-  await Firebase.initializeApp().whenComplete(() {
-    print("Handling a background message: ${remoteMessage.data}");
-
-    Map<dynamic, dynamic> _notiData = remoteMessage.data;
-    Map<dynamic, dynamic> _data = json.decode(_notiData['data']);
-    FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
-        FlutterLocalNotificationsPlugin();
-    if (_data['callStatus'] == 'started') {
-      const AndroidInitializationSettings androidSettings =
-          AndroidInitializationSettings('@drawable/ic_noti');
-      final InitializationSettings initializationSettings =
-          InitializationSettings(android: androidSettings);
-
-      flutterLocalNotificationsPlugin
-          .initialize(initializationSettings)
-          .then((value) async {
-        if (value!) {
-          /// Create channel for notification
-          const AndroidNotificationDetails androidPlatformChannelSpecifics =
-              AndroidNotificationDetails(
-            'your channel id', 'your channel name',
-            channelDescription: 'your channel description',
-            importance: Importance.high,
-            priority: Priority.high,
-            category: AndroidNotificationCategory.call,
-
-            /// Set true for show App in lockScreen
-            fullScreenIntent: true,
-          );
-          const NotificationDetails platformChannelSpecifics =
-              NotificationDetails(android: androidPlatformChannelSpecifics);
-
-          /// Show notification
-          await flutterLocalNotificationsPlugin.show(
-            1234,
-            'Incoming Call from ${_data['from']['alias']}',
-            _data['from']['number'],
-            platformChannelSpecifics,
-          );
-        }
-      });
-    } else if (_data['callStatus'] == 'ended') {
-      flutterLocalNotificationsPlugin.cancel(1234);
-    }
-  });
-}
+var user1 =
+    'eyJjdHkiOiJzdHJpbmdlZS1hcGk7dj0xIiwidHlwIjoiSldUIiwiYWxnIjoiSFMyNTYifQ.eyJqdGkiOiJTSy4wLndkd29xU2R2UUEwSmNreGZYbHdZeXJMMG5yRUZSTklQLTE2NzkxMTQzODIiLCJpc3MiOiJTSy4wLndkd29xU2R2UUEwSmNreGZYbHdZeXJMMG5yRUZSTklQIiwiZXhwIjoxNjgxNzA2MzgyLCJ1c2VySWQiOiJwYXRpZW50XzQ4In0.V36FaRxcv6sFq4R93HZFgK27pgZ_1odVP5oE27ywbH4';
 
 main() {
   WidgetsFlutterBinding.ensureInitialized();
-  if (isAndroid)
-    Firebase.initializeApp().whenComplete(() {
-      print("completed");
-      FirebaseMessaging.onBackgroundMessage(_backgroundMessageHandler);
-    });
   runApp(MyApp());
 }
 
@@ -114,169 +40,8 @@ class _MyHomePageState extends State<MyHomePage> {
   @override
   void initState() {
     super.initState();
-
-    if (isAndroid) {
-      _androidCallManager!.setContext(context);
-
-      ///cấp quyền truy cập với android
-      requestPermissions();
-    } else {
-      /// Cấu hình thư viện để nhận push notification và sử dụng Callkit để show giao diện call native của iOS
-      _iOSCallManager!.configureCallKeep();
-    }
-
-    /// Lắng nghe sự kiện của StringeeClient(kết nối, cuộc gọi đến...)
-    InstanceManager.client.eventStreamController.stream.listen((event) {
-      Map<dynamic, dynamic> map = event;
-      switch (map['eventType']) {
-        case StringeeClientEvents.didConnect:
-          handleDidConnectEvent();
-          break;
-        case StringeeClientEvents.didDisconnect:
-          handleDiddisconnectEvent();
-          break;
-        case StringeeClientEvents.didFailWithError:
-          handleDidFailWithErrorEvent(
-              map['body']['code'], map['body']['message']);
-          break;
-        case StringeeClientEvents.requestAccessToken:
-          handleRequestAccessTokenEvent();
-          break;
-        case StringeeClientEvents.didReceiveCustomMessage:
-          handleDidReceiveCustomMessageEvent(map['body']);
-          break;
-        case StringeeClientEvents.incomingCall:
-          StringeeCall? call = map['body'];
-          if (isAndroid) {
-            _androidCallManager!.handleIncomingCallEvent(call!, context);
-          } else {
-            _iOSCallManager!.handleIncomingCallEvent(call!, context);
-          }
-          break;
-        case StringeeClientEvents.incomingCall2:
-          StringeeCall2? call = map['body'];
-          if (isAndroid) {
-            _androidCallManager!.handleIncomingCall2Event(call!, context);
-          } else {
-            _iOSCallManager!.handleIncomingCall2Event(call!, context);
-          }
-          break;
-        default:
-          break;
-      }
-    });
-
-    InstanceManager.client.connect(user1);
-  }
-
-  requestPermissions() async {
-    DeviceInfoPlugin deviceInfo = DeviceInfoPlugin();
-    AndroidDeviceInfo androidInfo = await deviceInfo.androidInfo;
-    List<Permission> permissions = [
-      Permission.camera,
-      Permission.microphone,
-    ];
-    if (androidInfo.version.sdkInt >= 31) {
-      permissions.add(Permission.bluetoothConnect);
-    }
-    Map<Permission, PermissionStatus> statuses = await permissions.request();
-    print(statuses);
-
-    if (androidInfo.version.sdkInt >= 33) {
-      // Register permission for show notification in android 13
-      FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
-          FlutterLocalNotificationsPlugin();
-      flutterLocalNotificationsPlugin
-          .resolvePlatformSpecificImplementation<
-              AndroidFlutterLocalNotificationsPlugin>()!
-          .requestPermission();
-    }
-  }
-
-  Future<void> registerPushWithStringeeServer() async {
-    if (isAndroid) {
-      Stream<String> tokenRefreshStream =
-          FirebaseMessaging.instance.onTokenRefresh;
-      SharedPreferences prefs = await SharedPreferences.getInstance();
-      bool? registered = (prefs.getBool("register") == null)
-          ? false
-          : prefs.getBool("register");
-
-      ///kiểm tra đã register push chưa
-      if (registered != null && !registered) {
-        FirebaseMessaging.instance.getToken().then((token) {
-          InstanceManager.client.registerPush(token!).then((value) {
-            print('Register push ' + value['message']);
-            if (value['status']) {
-              prefs.setBool("register", true);
-              prefs.setString("token", token);
-            }
-          });
-        });
-      }
-
-      ///Nhận token mới từ firebase
-      tokenRefreshStream.listen((token) {
-        ///Xóa token cũ
-        InstanceManager.client
-            .unregisterPush(prefs.getString("token")!)
-            .then((value) {
-          print('Unregister push ' + value['message']);
-          if (value['status']) {
-            ///Register với token mới
-            prefs.setBool("register", false);
-            prefs.remove("token");
-            InstanceManager.client.registerPush(token).then((value) {
-              print('Register push ' + value['message']);
-              if (value['status']) {
-                prefs.setBool("register", true);
-                prefs.setString("token", token);
-              }
-            });
-          }
-        });
-      });
-    } else {
-      _iOSCallManager!.registerPushWithStringeeServer();
-    }
-  }
-
-  /// StringeeClient Listeners
-  ///
-  void handleDidConnectEvent() {
-    print("handleDidConnectEvent");
-    if (!isAndroid) {
-      _iOSCallManager!.startTimeoutForIncomingCall();
-    }
-
-    setState(() {
-      myUserId = InstanceManager.client.userId;
-    });
-
-    registerPushWithStringeeServer();
-  }
-
-  void handleDiddisconnectEvent() {
-    print("handleDiddisconnectEvent");
-    if (!isAndroid) {
-      _iOSCallManager!.stopTimeoutForIncomingCall();
-    }
-
-    setState(() {
-      myUserId = 'Not connected';
-    });
-  }
-
-  void handleDidFailWithErrorEvent(int? code, String message) {
-    print('code: ' + code.toString() + ', message: ' + message);
-  }
-
-  void handleRequestAccessTokenEvent() {
-    print('Request new access token');
-  }
-
-  void handleDidReceiveCustomMessageEvent(Map<dynamic, dynamic> map) {
-    print('from: ' + map['fromUserId'] + '\nmessage: ' + map['message']);
+    Stringee.StringeeUtil.registEvents(context);
+    Stringee.StringeeUtil.connect(user1);
   }
 
   @override
@@ -322,7 +87,7 @@ class _ActionFormState extends State<ActionForm> {
             padding: EdgeInsets.all(20.0),
             child: new TextField(
               onChanged: (String value) {
-                toUserId = value;
+                // toUserId = value;
               },
               decoration: InputDecoration(
                   focusedBorder: UnderlineInputBorder(
@@ -393,26 +158,26 @@ class _ActionFormState extends State<ActionForm> {
   }
 
   void callTapped(bool isVideo, bool useCall2) {
-    if (toUserId.isEmpty || !InstanceManager.client.hasConnected) return;
-
-    GlobalKey<CallScreenState> callScreenKey = GlobalKey<CallScreenState>();
-    if (isAndroid) {
-      _androidCallManager!.callScreenKey = callScreenKey;
-    } else {
-      _iOSCallManager!.callScreenKey = callScreenKey;
-    }
-
-    CallScreen callScreen = CallScreen(
-      key: callScreenKey,
-      fromUserId: InstanceManager.client.userId,
-      toUserId: toUserId,
-      isVideo: isVideo,
-      useCall2: useCall2,
-    );
-
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => callScreen),
-    );
+    // if (toUserId.isEmpty || !Stringee.client.hasConnected) return;
+    //
+    // GlobalKey<CallScreenState> callScreenKey = GlobalKey<CallScreenState>();
+    // if (isAndroid) {
+    //   _androidCallManager!.callScreenKey = callScreenKey;
+    // } else {
+    //   _iOSCallManager!.callScreenKey = callScreenKey;
+    // }
+    //
+    // CallScreen callScreen = CallScreen(
+    //   key: callScreenKey,
+    //   fromUserId: Stringee.client.userId,
+    //   toUserId: toUserId,
+    //   isVideo: isVideo,
+    //   incoming: false,
+    // );
+    //
+    // Navigator.push(
+    //   context,
+    //   MaterialPageRoute(builder: (context) => callScreen),
+    // );
   }
 }

@@ -7,26 +7,24 @@
     Đối tượng này sẽ wrap 1 StringeeCall object và lưu 1 số trạng thái của cuộc gọi
 **/
 
+import 'package:ios_call_notification_sample/managers/background_manager.dart';
 import 'package:ios_call_notification_sample/managers/ios_call_manager.dart';
 import 'package:stringee_flutter_plugin/stringee_flutter_plugin.dart';
 
 class SyncCall {
   StringeeCall? stringeeCall;
-  StringeeCall2? stringeeCall2;
 
   int? serial = 1;
   String? callId = '';
   String? uuid = ''; // uuid da su dung de show callkit
-  StringeeSignalingState? callState =
-      StringeeSignalingState.calling; // trang thai cua StringeeCall
+  StringeeSignalingState? callState = StringeeSignalingState.calling; // trang thai cua StringeeCall
 
   bool userRejected = false;
-  bool userAnswered =
-      false; // Người dùng đã click và nút answer ở màn hình incoming call của callkit hoặc của app
-  bool callAnswered =
-      false; // StringeeCall đã được answer (đã gọi hàm answer của StringeeCall object)
-  bool audioSessionActived =
-      false; // AudioSession của iOS đã được active thì khi answer call của Stringee mới kết nối thoại được
+  bool userAnswered = false;
+  bool callAnswered = false;
+
+  // AudioSession của iOS đã được active thì khi answer call của Stringee mới kết nối thoại được
+  bool audioSessionActived = false;
 
   bool endedCallkit = false;
   bool endedStringeeCall = false;
@@ -37,8 +35,9 @@ class SyncCall {
   bool hasLocalStream = false;
   bool hasRemoteStream = false;
   var _status = '';
-  bool mediaFirstTimeConnected =
-      false; // Thêm biến này để check nếu là lần đầu media connected thì nếu là cuộc gọi video sẽ cho audio ra loa ngoài
+
+  // Thêm biến này để check nếu là lần đầu media connected thì nếu là cuộc gọi video sẽ cho audio ra loa ngoài
+  bool mediaFirstTimeConnected = false;
 
   set status(value) {
     _status = value;
@@ -62,7 +61,6 @@ class SyncCall {
     } else {
       callkitEndStatus = endedCallkit;
     }
-
     return callkitEndStatus && endedStringeeCall;
   }
 
@@ -73,23 +71,9 @@ class SyncCall {
     videoEnabled = call.isVideoCall;
   }
 
-  void attachCall2(StringeeCall2 call) {
-    stringeeCall2 = call;
-    serial = call.serial;
-    callId = call.id;
-    videoEnabled = call.isVideoCall;
-  }
-
   void answerCallkitCall() {
-    /*
-    * Hàm này thực hiện answer cuộc gọi đã show sử dụng CallKeep
-    * Sau khi thành công sẽ nhận được sự kiện CallKeepPerformAnswerCallAction của CallKeep
-    * **/
-    if (uuid == null || uuid!.isEmpty) {
-      return;
-    }
-
-    IOSCallManager.shared!.callKeep.answerIncomingCall(uuid!);
+    if (uuid?.isEmpty == true) return;
+    BackgroundManager.callKeep.answerIncomingCall(uuid!);
   }
 
   void answerIfConditionPassed() {
@@ -100,24 +84,19 @@ class SyncCall {
       3. Chua goi ham answer cua StringeeCall lan nao
       4. AudioSession da active
     **/
-    if (!userAnswered ||
-        callAnswered ||
-        !audioSessionActived ||
-        (stringeeCall == null && stringeeCall2 == null)) {
-      print(
-          'answerIfConditionPassed, condition has not been passed, userAnswered: ' +
-              userAnswered.toString() +
-              ", callAnswered: " +
-              callAnswered.toString() +
-              ", audioSessionActived: " +
-              audioSessionActived.toString());
+    if (!userAnswered || callAnswered || !audioSessionActived || stringeeCall == null) {
+      print('answerIfConditionPassed, condition has not been passed, userAnswered: ' +
+          userAnswered.toString() +
+          ", callAnswered: " +
+          callAnswered.toString() +
+          ", audioSessionActived: " +
+          audioSessionActived.toString());
       return;
     }
 
     // Cập nhật giao diện từ incomingCall ==> calling
-    if (IOSCallManager.shared!.callScreenKey != null &&
-        IOSCallManager.shared!.callScreenKey!.currentState != null) {
-      IOSCallManager.shared!.callScreenKey!.currentState!.changeToCallingUI();
+    if (IOSCallManager.shared.callScreenKey != null && IOSCallManager.shared.callScreenKey!.currentState != null) {
+      IOSCallManager.shared.callScreenKey!.currentState!.changeToCallingUI();
     }
 
     if (stringeeCall != null) {
@@ -130,91 +109,63 @@ class SyncCall {
           endCallIfNeed();
         }
       });
-    } else if (stringeeCall2 != null) {
-      stringeeCall2!.answer().then((result) {
-        String message = result['message'];
-        bool status = result['status'];
-        print("answer: " + message);
-        callAnswered = true;
-        if (!status) {
-          endCallIfNeed();
-        }
-      });
+    }
+  }
+
+  void endCall() {
+    endedCallkit = true;
+    userRejected = true;
+    print("[TEST] -> syncCall stringee = $stringeeCall, state = $callState");
+    if (hasStringeeCall() && callState != StringeeSignalingState.busy && callState != StringeeSignalingState.ended) {
+      print("[TEST] -> syncCall end");
+      if (callAnswered) {
+        hangup();
+      } else {
+        reject();
+      }
+    } else {
+      print("[TEST] -> syncCall missed");
+      // IOSCallManager.shared.clearDataEndDismiss();
     }
   }
 
   Future<bool?> reject() async {
-    if (stringeeCall == null && stringeeCall2 == null) {
-      print("SyncCall reject failed, call: " +
-          stringeeCall.toString() +
-          ", call2: " +
-          stringeeCall2.toString());
+    print("[TEST] -> synCall = reject");
+    if (stringeeCall == null) {
+      print("SyncCall reject failed, call: " + stringeeCall.toString());
       return false;
     }
 
     bool? status;
-
-    if (stringeeCall != null) {
-      await stringeeCall!.reject().then((result) {
-        String message = result['message'];
-        status = result['status'];
-        print("SyncCall reject, message: " + message);
-        endCallIfNeed();
-      });
-    } else {
-      await stringeeCall2!.reject().then((result) {
-        String message = result['message'];
-        status = result['status'];
-        print("SyncCall reject, message: " + message);
-        endCallIfNeed();
-      });
-    }
-
+    await stringeeCall?.reject().then((result) {
+      String message = result['message'];
+      status = result['status'];
+      print("SyncCall reject, message: " + message);
+      endCallIfNeed();
+    });
     return status;
   }
 
   Future<bool?> hangup() async {
-    if (stringeeCall == null && stringeeCall2 == null) {
-      print("SyncCall hangup failed, call: " +
-          stringeeCall.toString() +
-          ", call2: " +
-          stringeeCall2.toString());
+    print("[TEST] -> synCall = hangup");
+    if (stringeeCall == null) {
+      print("SyncCall hangup failed, call: " + stringeeCall.toString());
       return false;
     }
 
     bool? status;
-
-    if (stringeeCall != null) {
-      await stringeeCall!.hangup().then((result) {
-        String message = result['message'];
-        status = result['status'];
-        print("SyncCall hangup, message: " +
-            message +
-            ", status: " +
-            status.toString());
-        endCallIfNeed();
-      });
-    } else {
-      await stringeeCall2!.hangup().then((result) {
-        String message = result['message'];
-        status = result['status'];
-        print("SyncCall hangup, message: " +
-            message +
-            ", status: " +
-            status.toString());
-        endCallIfNeed();
-      });
-    }
-
+    await stringeeCall?.hangup().then((result) {
+      String message = result['message'];
+      status = result['status'];
+      print("SyncCall hangup, message: " + message + ", status: " + status.toString());
+      endCallIfNeed();
+    });
     return status;
   }
 
   void mute({bool? isMute}) {
-    if (stringeeCall == null && stringeeCall2 == null) {
-      print("SyncCall mute failed, call: " +
-          stringeeCall.toString() +
-          ", call2: " +
-          stringeeCall2.toString());
+    if (stringeeCall == null) {
+      print("SyncCall mute failed, call: " + stringeeCall.toString());
       return;
     }
 
@@ -224,64 +175,40 @@ class SyncCall {
       this.isMute = !this.isMute;
     }
 
-    if (stringeeCall != null) {
-      stringeeCall!.mute(this.isMute);
-    } else {
-      stringeeCall2!.mute(this.isMute);
-    }
+    stringeeCall?.mute(this.isMute);
     updateUI();
   }
 
   Future<bool> setSpeakerphoneOn() async {
-    if (stringeeCall == null && stringeeCall2 == null) {
-      print("SyncCall setSpeakerphoneOn failed, call: " +
-          stringeeCall.toString() +
-          ", call2: " +
-          stringeeCall2.toString());
+    if (stringeeCall == null) {
+      print("SyncCall setSpeakerphoneOn failed, call: " + stringeeCall.toString());
       return false;
     }
 
     isSpeaker = !isSpeaker;
-    if (stringeeCall != null) {
-      await stringeeCall!.setSpeakerphoneOn(isSpeaker);
-    } else {
-      await stringeeCall2!.setSpeakerphoneOn(isSpeaker);
-    }
+    await stringeeCall?.setSpeakerphoneOn(isSpeaker);
     updateUI();
     return true;
   }
 
   void switchCamera() {
-    if (stringeeCall == null && stringeeCall2 == null) {
-      print("SyncCall switchCamera failed, call: " +
-          stringeeCall.toString() +
-          ", call2: " +
-          stringeeCall2.toString());
+    if (stringeeCall == null) {
+      print("SyncCall switchCamera failed, call: " + stringeeCall.toString());
       return;
     }
 
-    if (stringeeCall != null) {
-      stringeeCall!.switchCamera();
-    } else {
-      stringeeCall2!.switchCamera();
-    }
+    stringeeCall?.switchCamera();
   }
 
   Future<bool> enableVideo() async {
-    if (stringeeCall == null && stringeeCall2 == null) {
-      print("SyncCall enableVideo failed, call: " +
-          stringeeCall.toString() +
-          ", call2: " +
-          stringeeCall2.toString());
+    if (stringeeCall == null) {
+      print("SyncCall enableVideo failed, call: " + stringeeCall.toString());
       return false;
     }
 
     videoEnabled = !videoEnabled;
-    if (stringeeCall != null) {
-      await stringeeCall!.enableVideo(videoEnabled);
-    } else {
-      await stringeeCall2!.enableVideo(videoEnabled);
-    }
+    await stringeeCall?.enableVideo(videoEnabled);
+
     updateUI();
     return true;
   }
@@ -291,8 +218,7 @@ class SyncCall {
       return;
     }
 
-    if ((stringeeCall != null && stringeeCall!.isVideoCall) ||
-        (stringeeCall2 != null && stringeeCall2!.isVideoCall)) {
+    if ((stringeeCall != null && stringeeCall!.isVideoCall)) {
       mediaFirstTimeConnected = true;
       isSpeaker = false;
       setSpeakerphoneOn();
@@ -300,55 +226,23 @@ class SyncCall {
   }
 
   void endCallIfNeed() {
-    IOSCallManager.shared!.clearDataEndDismiss();
+    // IOSCallManager.shared.clearDataEndDismiss();
   }
 
   void updateUI() {
-    if (IOSCallManager.shared!.callScreenKey != null &&
-        IOSCallManager.shared!.callScreenKey!.currentState != null) {
-      IOSCallManager.shared!.callScreenKey!.currentState!.setState(() {});
-    }
+    IOSCallManager.shared.callScreenKey?.currentState?.setState(() {});
   }
 
-  /// Thêm các hàm xử lý chung cho StringeeCall và StringeeCall2 của Stringee
-  ///
   bool hasStringeeCall() {
-    return stringeeCall != null || stringeeCall2 != null;
-  }
-
-  bool isVideoCall() {
-    if (stringeeCall != null) {
-      return stringeeCall!.isVideoCall;
-    } else if (stringeeCall2 != null) {
-      return stringeeCall2!.isVideoCall;
-    }
-
-    return false;
-  }
-
-  String? from() {
-    if (stringeeCall != null) {
-      return stringeeCall!.from;
-    } else if (stringeeCall2 != null) {
-      return stringeeCall2!.from;
-    }
-    return "";
-  }
-
-  String? to() {
-    if (stringeeCall != null) {
-      return stringeeCall!.to;
-    } else if (stringeeCall2 != null) {
-      return stringeeCall2!.to;
-    }
-    return "";
+    return stringeeCall != null;
   }
 
   void destroy() {
-    if (stringeeCall != null) {
-      return stringeeCall!.destroy();
-    } else if (stringeeCall2 != null) {
-      stringeeCall2!.destroy();
-    }
+    stringeeCall?.destroy();
+  }
+
+  @override
+  String toString() {
+    return "uuid=$uuid, userAnswered=$userAnswered";
   }
 }

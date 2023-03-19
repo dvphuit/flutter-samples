@@ -36,7 +36,7 @@ class CallScreenState extends State<CallScreen> {
 
     if (CallManager.shared.syncCall == null) {
       // Goi di
-      makeOutgoingCall();
+      // makeOutgoingCall();
     } else {
       // Goi den
       widget.showIncomingUI = !CallManager.shared.syncCall.userAnswered;
@@ -134,9 +134,7 @@ class CallScreenState extends State<CallScreen> {
         ? new StringeeVideoView(
       CallManager.shared.syncCall.stringeeCall.id,
       true,
-      color: Colors.white,
       alignment: Alignment.topRight,
-      isOverlay: true,
       margin: EdgeInsets.only(top: 100.0, right: 25.0),
       height: 200.0,
       width: 150.0,
@@ -148,8 +146,6 @@ class CallScreenState extends State<CallScreen> {
         ? new StringeeVideoView(
       CallManager.shared.syncCall.stringeeCall.id,
       false,
-      color: Colors.blue,
-      isOverlay: false,
       isMirror: false,
       scalingType: ScalingType.fill,
     )
@@ -169,34 +165,34 @@ class CallScreenState extends State<CallScreen> {
     );
   }
 
-  Future makeOutgoingCall() async {
-      final parameters = {
-        'from': widget.fromUserId,
-        'to': widget.toUserId,
-        'isVideoCall': widget.isVideo,
-        'customData': null,
-        'videoQuality': VideoQuality.hd,
-      };
-
-      var outgoingCall = StringeeCall();
-      CallManager.shared.syncCall = SyncCall();
-      CallManager.shared.syncCall.stringeeCall = outgoingCall;
-      CallManager.shared.addListenerForCall();
-
-      outgoingCall.makeCall(parameters).then((result) {
-        bool status = result['status'];
-        int code = result['code'];
-        String message = result['message'];
-        print('MakeCall CallBack --- $status - $code - $message - ${outgoingCall.id} - ${outgoingCall.from} - ${outgoingCall.to}');
-
-        CallManager.shared.syncCall.attachCall(outgoingCall);
-
-        if (!status) {
-          CallManager.shared.clearDataEndDismiss();
-        }
-      });
-    // }
-  }
+  // Future makeOutgoingCall() async {
+  //     final parameters = {
+  //       'from': widget.fromUserId,
+  //       'to': widget.toUserId,
+  //       'isVideoCall': widget.isVideo,
+  //       'customData': null,
+  //       'videoQuality': VideoQuality.hd,
+  //     };
+  //
+  //     var outgoingCall = StringeeCall();
+  //     CallManager.shared.syncCall = SyncCall();
+  //     CallManager.shared.syncCall.stringeeCall = outgoingCall;
+  //     CallManager.shared.addListenerForCall();
+  //
+  //     outgoingCall.makeCall(parameters).then((result) {
+  //       bool status = result['status'];
+  //       int code = result['code'];
+  //       String message = result['message'];
+  //       print('MakeCall CallBack --- $status - $code - $message - ${outgoingCall.id} - ${outgoingCall.from} - ${outgoingCall.to}');
+  //
+  //       CallManager.shared.syncCall.attachCall(outgoingCall);
+  //
+  //       if (!status) {
+  //         CallManager.shared.clearDataEndDismiss();
+  //       }
+  //     });
+  //   // }
+  // }
 
   void endCallTapped() {
     if (CallManager.shared.syncCall == null) {
